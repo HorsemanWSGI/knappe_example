@@ -1,85 +1,30 @@
-import colander
 import deform
-import typing as t
-import pathlib
-import http_session_file
-from chameleon.zpt.loader import TemplateLoader
 from chameleon.zpt.template import PageTemplateFile
 from horseman.mapping import RootNode
 from knappe.decorators import context, html, json, composed, trigger
-from knappe.response import Response
-from knappe.auth import WSGISessionAuthenticator
 from knappe.request import RoutingRequest as Request
 from knappe.routing import Router
-from knappe.middlewares import auth
-from knappe.middlewares.session import HTTPSession
-from knappe.ui import SlotExpr, slot, UI, Layout
+from knappe.pipeline import Pipeline
 from knappe.meta import HTTPMethodEndpointMeta
+from .ui import themeUI
+from .forms import LoginForm
 
 
-authentication = auth.Authentication(
-    authenticator=WSGISessionAuthenticator([
-        DictSource({"admin": "admin"})
-    ]),
-    filters=(
-        auth.security_bypass({"/login"}),
-        auth.secured(path="/login")
-    )
-)
-
-session = HTTPSession(
-    store=http_session_file.FileStore(pathlib.Path('./session'), 300),
-    secret='secret',
-    salt='salt',
-    cookie_name='session',
-    secure=False,
-    TTL=300
-)
-
-
-PageTemplateFile.expression_types['slot'] = SlotExpr
-
-
-@slot.register
-@html('header')
-def header(request: Request, view: t.Any, context: t.Any, name: t.Literal['header']):
-    return {'title': 'This is a header'}
-
-
-themeUI = UI(
-    templates=TemplateLoader(".", ext=".pt"),
-    layout=Layout(PageTemplateFile('master.pt')),
-)
+router = Router()
 
 
 class Application(RootNode):
 
-    def __init__(self, middlewares=(), config=None):
+    def __init__(self, router=router, middlewares=(), config=None):
         self.config = config
-        self.router = Router()
-        pipeline: Pipeline[Request, Response] = Pipeline(middlewares)
+        self.router = router
+        self.pipeline: Pipeline[Request, Response] = Pipeline(middlewares)
 
     def resolve(self, path_info, environ):
         request = Request(environ, app=self)
         endpoint = self.router.match_method(request.path, request.method)
         request.context['ui'] = themeUI
-        return endpoint.handler(request)
-
-
-app = Application()
-
-
-class LoginForm(colander.Schema):
-
-    username = colander.SchemaNode(
-        colander.String(),
-        title="Login")
-
-    password = colander.SchemaNode(
-        colander.String(),
-        widget=deform.widget.PasswordWidget(),
-        title="Password",
-        description="Your password")
+        return self.pipeline(endpoint.handler)(request)
 
 
 def get_document(request):
@@ -92,7 +37,7 @@ def get_document(request):
     raise LookupError('Could not find the document.')
 
 
-@app.router.register('/doc/{docid}')
+@router.register('/doc/{docid}')
 class DocumentView(metaclass=HTTPMethodEndpointMeta):
 
     @json
@@ -101,12 +46,42 @@ class DocumentView(metaclass=HTTPMethodEndpointMeta):
         return document
 
 
-@app.router.register('/')
-@html('index', default_template=PageTemplateFile('index.pt'))
+@router.register('/')
+@html('index')
 def index(request):
     return {}
 
 
-if __name__ == "__main__":
-    import bjoern
-    bjoern.run(app, "127.0.0.1", 8000)
+@router.register('/login')
+class Login(metaclass=HTTPMethodEndpointMeta):
+
+    def get_form(self, request):
+        schema = LoginForm().bind(request=request)
+        process_btn = deform.form.Button(name='process', title="Process")
+        return deform.form.Form(schema, buttons=(process_btn,))
+
+    @html('form')
+    def GET(self, request):
+        form = self.get_form(request)
+        return {
+            "rendered_form": form.render()
+        }
+
+    @html('form')
+    def POST(self, request):
+        form = self.get_form(request)
+        data = request.extract()
+        if ('process', 'process') in data.form:
+            try:
+                appstruct = form.validate(data.form)
+                auth = request.context['authentication']
+                user = auth.from_credentials(request, appstruct)
+                if user is not None:
+                    auth.remember(request, user)
+                    return Response.redirect("/")
+                return Response.redirect("/login")
+            except deform.exception.ValidationFailure as e:
+                return {
+                    "rendered_form": e.render()
+                }
+        return Response(400)
