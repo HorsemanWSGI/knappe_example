@@ -22,8 +22,9 @@ class Application(RootNode):
         self.pipeline: Pipeline[Request, Response] = Pipeline(middlewares)
 
     def resolve(self, path_info, environ):
-        request = Request(environ, app=self)
-        endpoint = self.router.match_method(request.path, request.method)
+        endpoint = self.router.match_method(
+            path_info, environ['REQUEST_METHOD'])
+        request = Request(environ, app=self, endpoint=endpoint)
         request.context['ui'] = themeUI
         return self.pipeline(endpoint.handler)(request)
 
