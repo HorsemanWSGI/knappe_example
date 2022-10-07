@@ -3,6 +3,7 @@ from chameleon.zpt.template import PageTemplateFile
 from horseman.mapping import RootNode
 from knappe.decorators import context, html, json, composed, trigger
 from knappe.request import RoutingRequest as Request
+from knappe.response import Response
 from knappe.routing import Router
 from knappe.pipeline import Pipeline
 from knappe.meta import HTTPMethodEndpointMeta
@@ -70,10 +71,9 @@ class Login(metaclass=HTTPMethodEndpointMeta):
     @html('form')
     def POST(self, request):
         form = self.get_form(request)
-        data = request.extract()
-        if ('process', 'process') in data.form:
+        if ('process', 'process') in request.data.form:
             try:
-                appstruct = form.validate(data.form)
+                appstruct = form.validate(request.data.form)
                 auth = request.context['authentication']
                 user = auth.from_credentials(request, appstruct)
                 if user is not None:
