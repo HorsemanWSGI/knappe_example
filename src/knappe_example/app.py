@@ -11,6 +11,7 @@ from knappe.pipeline import Pipeline
 from knappe.meta import HTTPMethodEndpointMeta
 from .ui import themeUI
 from .forms import LoginForm, trigger
+from functools import cached_property
 
 
 router = Router()
@@ -59,15 +60,29 @@ def index(request):
 @router.register('/login')
 class Login(metaclass=HTTPMethodEndpointMeta):
 
-    def get_form(self, request, buttons):
+    def __init__(self):
+        print('I compute the actions and buttons')
+        triggers = trigger.in_order(self)
+        self.actions = {('trigger', t.value): m for t, m in triggers}
+        self.buttons = tuple((
+            deform.form.Button(
+                name='trigger',
+                title=t.title,
+                value=t.value,
+                css_class=t.css_class,
+                icon=t.icon,
+            ) for t, m in triggers
+        ))
+
+    def get_form(self, request):
         schema = LoginForm().bind(request=request)
-        return deform.form.Form(schema, buttons=buttons)
+        return deform.form.Form(schema, buttons=self.buttons)
 
     @html('form')
     def GET(self, request):
-        buttons, actions = trigger.buttons_actions(self)
-        form = self.get_form(request, buttons)
+        form = self.get_form(request)
         return {
+            "error": None,
             "rendered_form": form.render()
         }
 
@@ -85,18 +100,22 @@ class Login(metaclass=HTTPMethodEndpointMeta):
             if user is not None:
                 auth.remember(request, user)
                 return Response.redirect("/")
-            return Response.redirect("/login")
+
+            return {
+                "error": "Login failed.",
+                "rendered_form": form.render()
+            }
         except deform.exception.ValidationFailure as e:
             return {
+                "error": None,
                 "rendered_form": e.render()
             }
 
     def POST(self, request):
-        buttons, actions = trigger.buttons_actions(self)
-        form = self.get_form(request, buttons)
-        found = set(actions) & set(request.data.form)
+        form = self.get_form(request)
+        found = tuple(set(self.actions) & set(request.data.form))
         if len(found) != 1:
             raise HTTPError(
                 400, body='Could not resolve an action for the form.')
-        action = actions[next(iter(found))]
+        action = self.actions[found[0]]
         return action(request, form)

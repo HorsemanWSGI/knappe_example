@@ -1,3 +1,6 @@
 <div>
+  <div tal:condition="error" class="alert alert-warning">
+    ${error}
+  </div>
   <div tal:replace="structure rendered_form"></div>
 </div>

@@ -1,45 +1,39 @@
 import colander
 import deform
 from knappe.annotations import annotation
-from typing import NamedTuple
+from typing import NamedTuple, Iterator
 
 
-class Button(NamedTuple):
-    name: str
+class Trigger(NamedTuple):
     title: str
     value: str
     css_class: str = None
     icon: str = None
+    order: int = 0
 
 
 class trigger(annotation):
     name = "__trigger__"
 
-    def __init__(self, value,
-                 title: str = None, icon: str = None, css_class = None):
-        self.key = value
-        self.annotation = Button(
-            name='trigger',
+    def __init__(self,
+                 value,
+                 title: str = None,
+                 icon: str = None,
+                 css_class = None,
+                 order: int = 10,
+
+                 ):
+        self.annotation = Trigger(
             title=title,
             value=value,
             css_class=css_class,
-            icon=icon
+            icon=icon,
+            order=order,
         )
 
     @classmethod
-    def buttons_actions(cls, form):
-        buttons = []
-        actions = {}
-        for button, action in cls.find(form):
-            buttons.append(
-                deform.form.Button(**button._asdict())
-            )
-            key = (button.name, button.value)
-            if key in actions:
-                raise KeyError(f'Button defined twice: {button}')
-            actions[key] = action
-
-        return buttons, actions
+    def in_order(cls, component):
+        return sorted(trigger.find(component), key=lambda x: x[0].order)
 
 
 class LoginForm(colander.Schema):
