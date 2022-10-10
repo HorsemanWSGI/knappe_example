@@ -1,6 +1,8 @@
 import deform
+from deform.form import Button
 from chameleon.zpt.template import PageTemplateFile
 from horseman.mapping import RootNode
+from horseman.exceptions import HTTPError
 from knappe.decorators import context, html, json, composed, trigger
 from knappe.request import RoutingRequest as Request
 from knappe.response import Response
@@ -8,7 +10,7 @@ from knappe.routing import Router
 from knappe.pipeline import Pipeline
 from knappe.meta import HTTPMethodEndpointMeta
 from .ui import themeUI
-from .forms import LoginForm
+from .forms import LoginForm, trigger
 
 
 router = Router()
@@ -57,32 +59,44 @@ def index(request):
 @router.register('/login')
 class Login(metaclass=HTTPMethodEndpointMeta):
 
-    def get_form(self, request):
+    def get_form(self, request, buttons):
         schema = LoginForm().bind(request=request)
-        process_btn = deform.form.Button(name='process', title="Process")
-        return deform.form.Form(schema, buttons=(process_btn,))
+        return deform.form.Form(schema, buttons=buttons)
 
     @html('form')
     def GET(self, request):
-        form = self.get_form(request)
+        buttons, actions = trigger.buttons_actions(self)
+        form = self.get_form(request, buttons)
         return {
             "rendered_form": form.render()
         }
 
+    @trigger('cancel', title="Cancel")
+    def cancel(self, request, form):
+        return Response.redirect('/')
+
+    @trigger('process', title="Process")
     @html('form')
+    def process_credentials(self, request, form):
+        try:
+            appstruct = form.validate(request.data.form)
+            auth = request.context['authentication']
+            user = auth.from_credentials(request, appstruct)
+            if user is not None:
+                auth.remember(request, user)
+                return Response.redirect("/")
+            return Response.redirect("/login")
+        except deform.exception.ValidationFailure as e:
+            return {
+                "rendered_form": e.render()
+            }
+
     def POST(self, request):
-        form = self.get_form(request)
-        if ('process', 'process') in request.data.form:
-            try:
-                appstruct = form.validate(request.data.form)
-                auth = request.context['authentication']
-                user = auth.from_credentials(request, appstruct)
-                if user is not None:
-                    auth.remember(request, user)
-                    return Response.redirect("/")
-                return Response.redirect("/login")
-            except deform.exception.ValidationFailure as e:
-                return {
-                    "rendered_form": e.render()
-                }
-        return Response(400)
+        buttons, actions = trigger.buttons_actions(self)
+        form = self.get_form(request, buttons)
+        found = set(actions) & set(request.data.form)
+        if len(found) != 1:
+            raise HTTPError(
+                400, body='Could not resolve an action for the form.')
+        action = actions[next(iter(found))]
+        return action(request, form)
