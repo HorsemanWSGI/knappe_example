@@ -3,14 +3,16 @@ from deform.form import Button
 from chameleon.zpt.template import PageTemplateFile
 from horseman.mapping import RootNode
 from horseman.exceptions import HTTPError
-from knappe.decorators import context, html, json, composed, trigger
+from knappe.decorators import context, html, json, composed
+from knappe_deform import trigger
 from knappe.request import RoutingRequest as Request
 from knappe.response import Response
 from knappe.routing import Router
 from knappe.pipeline import Pipeline
 from knappe.meta import HTTPMethodEndpointMeta
+from knappe_deform import FormPage
 from .ui import themeUI
-from .forms import LoginForm, trigger
+from .forms import LoginSchema
 from functools import cached_property
 
 
@@ -58,42 +60,19 @@ def index(request):
 
 
 @router.register('/login')
-class Login(metaclass=HTTPMethodEndpointMeta):
+class Login(FormPage):
 
-    def __init__(self):
-        print('I compute the actions and buttons')
-        triggers = trigger.in_order(self)
-        self.actions = {('trigger', t.value): m for t, m in triggers}
-        self.buttons = tuple((
-            deform.form.Button(
-                name='trigger',
-                title=t.title,
-                value=t.value,
-                css_class=t.css_class,
-                icon=t.icon,
-            ) for t, m in triggers
-        ))
-
-    def get_form(self, request):
-        schema = LoginForm().bind(request=request)
-        return deform.form.Form(schema, buttons=self.buttons)
-
-    @html('form')
-    def GET(self, request):
-        form = self.get_form(request)
-        return {
-            "error": None,
-            "rendered_form": form.render()
-        }
+    schema = LoginSchema
 
     @trigger('cancel', title="Cancel")
-    def cancel(self, request, form):
+    def cancel(self, request):
         return Response.redirect('/')
 
     @trigger('process', title="Process")
     @html('form')
-    def process_credentials(self, request, form):
+    def process_credentials(self, request):
         try:
+            form = self.get_form(request)
             appstruct = form.validate(request.data.form)
             auth = request.context['authentication']
             user = auth.from_credentials(request, appstruct)
@@ -110,12 +89,3 @@ class Login(metaclass=HTTPMethodEndpointMeta):
                 "error": None,
                 "rendered_form": e.render()
             }
-
-    def POST(self, request):
-        form = self.get_form(request)
-        found = tuple(set(self.actions) & set(request.data.form))
-        if len(found) != 1:
-            raise HTTPError(
-                400, body='Could not resolve an action for the form.')
-        action = self.actions[found[0]]
-        return action(request, form)
