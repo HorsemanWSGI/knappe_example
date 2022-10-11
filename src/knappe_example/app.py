@@ -69,7 +69,6 @@ class Login(FormPage):
         return Response.redirect('/')
 
     @trigger('process', title="Process")
-    @html('form')
     def process_credentials(self, request):
         try:
             form = self.get_form(request)
