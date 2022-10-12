@@ -1,10 +1,13 @@
 import pathlib
 import http_session_file
+from knappe.blueprint import apply_blueprint
 from knappe.testing import DictSource
 from knappe.auth import WSGISessionAuthenticator
 from knappe.middlewares import auth
 from knappe.middlewares.session import HTTPSession
 from knappe_example.app import Application
+from knappe_example.views import views
+from knappe_example.forms import forms
 
 
 authentication = auth.Authentication(
@@ -28,6 +31,7 @@ session = HTTPSession(
 
 
 app = Application(middlewares=(session, authentication))
+apply_blueprint(views | forms, app.router)
 
 
 if __name__ == "__main__":
