@@ -6,8 +6,7 @@ from knappe.auth import WSGISessionAuthenticator
 from knappe.middlewares import auth
 from knappe.middlewares.session import HTTPSession
 from knappe_example.app import Application
-from knappe_example.views import views
-from knappe_example.forms import forms
+from knappe_example import Example
 
 
 authentication = auth.Authentication(
@@ -30,8 +29,9 @@ session = HTTPSession(
 )
 
 
-app = Application(middlewares=(session, authentication))
-apply_blueprint(views | forms, app.router)
+app = Example(
+    Application(middlewares=(session, authentication))
+)
 
 
 if __name__ == "__main__":
